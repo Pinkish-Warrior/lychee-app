@@ -12,6 +12,7 @@ import {
   getReviewQueueNotes,
   updateNoteCategory,
   logFeedback,
+  deleteNote,
 } from "./db";
 
 export const appRouter = router({
@@ -77,6 +78,37 @@ export const appRouter = router({
         const userId = ctx.user.id;
         const notes = await getNotesByUserAndCategory(userId, input.category);
         return notes.reverse();
+      }),
+
+    delete: protectedProcedure
+      .input(
+        z.object({
+          noteId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const userId = ctx.user.id;
+        const { noteId } = input;
+
+        await deleteNote(noteId, userId);
+        return { success: true };
+      }),
+
+    getDashboardFiltered: protectedProcedure
+      .input(
+        z.object({
+          category: z.enum(["People", "Projects", "Ideas", "Admin"]).optional(),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const userId = ctx.user.id;
+        let allNotes;
+        if (input.category) {
+          allNotes = await getNotesByUserAndCategory(userId, input.category);
+        } else {
+          allNotes = await getNotesByUserId(userId);
+        }
+        return allNotes.slice(-10).reverse();
       }),
 
     correctClassification: protectedProcedure

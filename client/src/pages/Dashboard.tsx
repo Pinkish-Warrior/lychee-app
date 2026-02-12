@@ -3,16 +3,21 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Dashboard() {
   const [noteContent, setNoteContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
+  const [deleteNoteId, setDeleteNoteId] = useState<number | null>(null);
 
-  const dashboardQuery = trpc.notes.getDashboard.useQuery();
+  const dashboardQuery = trpc.notes.getDashboardFiltered.useQuery({ category: selectedCategory as any });
   const captureMutation = trpc.notes.capture.useMutation();
+  const deleteMutation = trpc.notes.delete.useMutation();
 
   const handleCapture = async () => {
     if (!noteContent.trim()) {
@@ -39,6 +44,18 @@ export default function Dashboard() {
       console.error(error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: number) => {
+    try {
+      await deleteMutation.mutateAsync({ noteId });
+      toast.success("Note deleted successfully.");
+      dashboardQuery.refetch();
+      setDeleteNoteId(null);
+    } catch (error) {
+      toast.error("Failed to delete note. Please try again.");
+      console.error(error);
     }
   };
 
@@ -91,7 +108,21 @@ export default function Dashboard() {
       </Card>
 
       <div>
-        <h2 className="text-2xl font-bold mb-4">Recent Notes</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Recent Notes</h2>
+          <Select value={selectedCategory || "all"} onValueChange={(value) => setSelectedCategory(value === "all" ? undefined : value)}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Filter by category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              <SelectItem value="People">People</SelectItem>
+              <SelectItem value="Projects">Projects</SelectItem>
+              <SelectItem value="Ideas">Ideas</SelectItem>
+              <SelectItem value="Admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         {dashboardQuery.isLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -107,7 +138,17 @@ export default function Dashboard() {
                       <p className="text-xs text-gray-500">{note.reasoning}</p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      <Badge className={getCategoryColor(note.category)}>{note.category}</Badge>
+                      <div className="flex gap-2 items-center">
+                        <Badge className={getCategoryColor(note.category)}>{note.category}</Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteNoteId(note.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                       <span className={`text-xs font-semibold ${getConfidenceColor(parseFloat(note.confidence as unknown as string))}`}>
                         {(parseFloat(note.confidence as unknown as string) * 100).toFixed(0)}%
                       </span>
@@ -125,6 +166,34 @@ export default function Dashboard() {
           </Card>
         )}
       </div>
+
+      <AlertDialog open={deleteNoteId !== null} onOpenChange={(open) => !open && setDeleteNoteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this note? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteNoteId && handleDeleteNote(deleteNoteId)}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

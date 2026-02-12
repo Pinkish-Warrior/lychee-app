@@ -165,3 +165,16 @@ export async function logFeedback(
     userCategory: userCategory as any,
   });
 }
+
+export async function deleteNote(noteId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Verify the note belongs to the user before deleting
+  const note = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  if (!note || note.length === 0 || note[0].userId !== userId) {
+    throw new Error("Note not found or unauthorized");
+  }
+
+  return await db.delete(notes).where(eq(notes.id, noteId));
+}
