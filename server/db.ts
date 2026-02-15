@@ -178,3 +178,21 @@ export async function deleteNote(noteId: number, userId: number) {
 
   return await db.delete(notes).where(eq(notes.id, noteId));
 }
+
+export async function updateNoteContent(noteId: number, userId: number, newContent: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Verify the note belongs to the user before updating
+  const note = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  if (!note || note.length === 0 || note[0].userId !== userId) {
+    throw new Error("Note not found or unauthorized");
+  }
+
+  return await db
+    .update(notes)
+    .set({
+      content: newContent,
+    })
+    .where(eq(notes.id, noteId));
+}

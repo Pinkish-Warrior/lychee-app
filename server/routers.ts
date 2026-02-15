@@ -13,6 +13,7 @@ import {
   updateNoteCategory,
   logFeedback,
   deleteNote,
+  updateNoteContent,
 } from "./db";
 
 export const appRouter = router({
@@ -134,6 +135,21 @@ export const appRouter = router({
         const confidence = parseFloat(note.confidence as unknown as string);
         await logFeedback(noteId, userId, confidence, note.category, correctedCategory);
 
+        return { success: true };
+      }),
+
+    updateContent: protectedProcedure
+      .input(
+        z.object({
+          noteId: z.number(),
+          newContent: z.string().min(1, "Note content cannot be empty"),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const userId = ctx.user.id;
+        const { noteId, newContent } = input;
+
+        await updateNoteContent(noteId, userId, newContent);
         return { success: true };
       }),
   }),
