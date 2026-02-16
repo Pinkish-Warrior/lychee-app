@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Edit2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -14,10 +14,13 @@ export default function Dashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [deleteNoteId, setDeleteNoteId] = useState<number | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
 
   const dashboardQuery = trpc.notes.getDashboardFiltered.useQuery({ category: selectedCategory as any });
   const captureMutation = trpc.notes.capture.useMutation();
   const deleteMutation = trpc.notes.delete.useMutation();
+  const updateMutation = trpc.notes.updateContent.useMutation();
 
   const handleCapture = async () => {
     if (!noteContent.trim()) {
@@ -55,6 +58,34 @@ export default function Dashboard() {
       setDeleteNoteId(null);
     } catch (error) {
       toast.error("Failed to delete note. Please try again.");
+      console.error(error);
+    }
+  };
+
+  const handleEditNote = (noteId: number, currentContent: string) => {
+    setEditingNoteId(noteId);
+    setEditContent(currentContent);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editContent.trim()) {
+      toast.error("Note content cannot be empty");
+      return;
+    }
+
+    if (editingNoteId === null) return;
+
+    try {
+      await updateMutation.mutateAsync({
+        noteId: editingNoteId,
+        newContent: editContent,
+      });
+      toast.success("Note updated successfully.");
+      dashboardQuery.refetch();
+      setEditingNoteId(null);
+      setEditContent("");
+    } catch (error) {
+      toast.error("Failed to update note. Please try again.");
       console.error(error);
     }
   };
@@ -143,6 +174,14 @@ export default function Dashboard() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => handleEditNote(note.id, note.content)}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => setDeleteNoteId(note.id)}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
@@ -189,6 +228,42 @@ export default function Dashboard() {
                 </>
               ) : (
                 "Delete"
+              )}
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={editingNoteId !== null} onOpenChange={(open) => !open && setEditingNoteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Modify the content of your note below.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="min-h-24"
+              placeholder="Edit your note..."
+            />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSaveEdit}
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={updateMutation.isPending || !editContent.trim()}
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
               )}
             </AlertDialogAction>
           </div>
