@@ -209,15 +209,20 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+type LLMProvider = { url: string; key: string; model: string };
 
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+const resolveProvider = (): LLMProvider => {
+  if (ENV.forgeApiKey) {
+    const base = ENV.forgeApiUrl.trim() || "https://forge.manus.im";
+    return { url: `${base.replace(/\/$/, "")}/v1/chat/completions`, key: ENV.forgeApiKey, model: "gemini-2.5-flash" };
   }
+  if (ENV.geminiApiKey) {
+    return { url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", key: ENV.geminiApiKey, model: "gemini-2.5-flash" };
+  }
+  if (ENV.openaiApiKey) {
+    return { url: "https://api.openai.com/v1/chat/completions", key: ENV.openaiApiKey, model: "gpt-4o-mini" };
+  }
+  throw new Error("No LLM API key configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
 };
 
 const normalizeResponseFormat = ({
@@ -266,7 +271,7 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  const provider = resolveProvider();
 
   const {
     messages,
@@ -280,8 +285,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: provider.model,
     messages: messages.map(normalizeMessage),
+    max_tokens: 4096,
   };
 
   if (tools && tools.length > 0) {
@@ -296,11 +302,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
-
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
     response_format,
@@ -312,11 +313,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  const response = await fetch(provider.url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${provider.key}`,
     },
     body: JSON.stringify(payload),
   });
