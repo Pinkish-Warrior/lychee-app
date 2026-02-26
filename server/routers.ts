@@ -2,7 +2,9 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { classifyNote } from "./classification";
 import { CLASSIFICATION_THRESHOLDS, shouldReviewNote } from "./config";
 import {
@@ -18,7 +20,10 @@ import {
   restoreNote,
   getArchivedNotes,
   getCategoryStats,
+  getUserByEmail,
+  upsertUser,
 } from "./db";
+import { sdk } from "./_core/sdk";
 
 export const appRouter = router({
   system: systemRouter,
@@ -31,6 +36,40 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+
+    login: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await getUserByEmail(input.email);
+        if (!user?.passwordHash) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+        }
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+        }
+        const { ONE_YEAR_MS } = await import("@shared/const");
+        const token = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        return { success: true } as const;
+      }),
+
+    signup: publicProcedure
+      .input(z.object({ name: z.string().min(1), email: z.string().email(), password: z.string().min(8) }))
+      .mutation(async ({ ctx, input }) => {
+        const existing = await getUserByEmail(input.email);
+        if (existing) {
+          throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
+        }
+        const passwordHash = await bcrypt.hash(input.password, 10);
+        await upsertUser({ openId: input.email, name: input.name, email: input.email, passwordHash, lastSignedIn: new Date() });
+        const { ONE_YEAR_MS } = await import("@shared/const");
+        const token = await sdk.createSessionToken(input.email, { name: input.name, expiresInMs: ONE_YEAR_MS });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        return { success: true } as const;
+      }),
   }),
 
   notes: router({
