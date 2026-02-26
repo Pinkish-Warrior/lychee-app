@@ -10,22 +10,27 @@ import ReviewQueue from "@/pages/ReviewQueue";
 import CategoryView from "@/pages/CategoryView";
 import ComponentsShowcase from "@/pages/ComponentShowcase";
 import Archive from "@/pages/Archive";
+import Login from "@/pages/Login";
 
 
 function Router() {
   return (
-    <DashboardLayout>
-      <Switch>
-        <Route path={"/"} component={Dashboard} />
-        <Route path={"/review"} component={ReviewQueue} />
-        <Route path={"/category/:category"} component={CategoryView} />
-        <Route path={"/archive"} component={Archive} />
-        <Route path={"/showcase"} component={ComponentsShowcase} />
-
-        <Route path={"/404"} component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
-    </DashboardLayout>
+    <Switch>
+      <Route path={"/login"} component={Login} />
+      <Route>
+        <DashboardLayout>
+          <Switch>
+            <Route path={"/"} component={Dashboard} />
+            <Route path={"/review"} component={ReviewQueue} />
+            <Route path={"/category/:category"} component={CategoryView} />
+            <Route path={"/archive"} component={Archive} />
+            <Route path={"/showcase"} component={ComponentsShowcase} />
+            <Route path={"/404"} component={NotFound} />
+            <Route component={NotFound} />
+          </Switch>
+        </DashboardLayout>
+      </Route>
+    </Switch>
   );
 }
 
