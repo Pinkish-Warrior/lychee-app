@@ -3,120 +3,134 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import { Loader2, Trash2, Edit2 } from "lucide-react";
+import { Loader2, Trash2, Edit2, Archive, Users, FolderKanban, Lightbulb, ClipboardList, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+
+const CATEGORIES = ["People", "Projects", "Ideas", "Admin"] as const;
+type Category = typeof CATEGORIES[number];
+
+const CATEGORY_CONFIG: Record<Category, { color: string; badge: string; icon: React.ElementType }> = {
+  People:   { color: "bg-blue-50 border-blue-200",   badge: "bg-blue-100 text-blue-800",   icon: Users },
+  Projects: { color: "bg-purple-50 border-purple-200", badge: "bg-purple-100 text-purple-800", icon: FolderKanban },
+  Ideas:    { color: "bg-green-50 border-green-200",  badge: "bg-green-100 text-green-800",  icon: Lightbulb },
+  Admin:    { color: "bg-orange-50 border-orange-200", badge: "bg-orange-100 text-orange-800", icon: ClipboardList },
+};
+
+function getConfidenceColor(confidence: number) {
+  if (confidence >= 0.85) return "text-green-600";
+  if (confidence >= 0.6) return "text-yellow-600";
+  return "text-red-600";
+}
 
 export default function Dashboard() {
+  const [, setLocation] = useLocation();
   const [noteContent, setNoteContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [deleteNoteId, setDeleteNoteId] = useState<number | null>(null);
+  const [archiveNoteId, setArchiveNoteId] = useState<number | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
 
-  const dashboardQuery = trpc.notes.getDashboardFiltered.useQuery({ category: selectedCategory as any });
+  const statsQuery = trpc.notes.getCategoryStats.useQuery();
+  const peopleQuery = trpc.notes.getByCategory.useQuery({ category: "People" });
+  const projectsQuery = trpc.notes.getByCategory.useQuery({ category: "Projects" });
+  const ideasQuery = trpc.notes.getByCategory.useQuery({ category: "Ideas" });
+  const adminQuery = trpc.notes.getByCategory.useQuery({ category: "Admin" });
+
+  const categoryQueries: Record<Category, typeof peopleQuery> = {
+    People: peopleQuery,
+    Projects: projectsQuery,
+    Ideas: ideasQuery,
+    Admin: adminQuery,
+  };
+
   const captureMutation = trpc.notes.capture.useMutation();
   const deleteMutation = trpc.notes.delete.useMutation();
+  const archiveMutation = trpc.notes.archive.useMutation();
   const updateMutation = trpc.notes.updateContent.useMutation();
+
+  const refetchAll = () => {
+    statsQuery.refetch();
+    peopleQuery.refetch();
+    projectsQuery.refetch();
+    ideasQuery.refetch();
+    adminQuery.refetch();
+  };
 
   const handleCapture = async () => {
     if (!noteContent.trim()) {
       toast.error("Please enter a note");
       return;
     }
-
     setIsSubmitting(true);
     try {
-      const result = await captureMutation.mutateAsync({
-        content: noteContent,
-      });
-
+      const result = await captureMutation.mutateAsync({ content: noteContent });
       toast.success(
         result.shouldReview
           ? "Note captured! Please review the classification."
           : "Note captured and classified successfully."
       );
-
       setNoteContent("");
-      dashboardQuery.refetch();
-    } catch (error) {
+      refetchAll();
+    } catch {
       toast.error("Failed to capture note. Please try again.");
-      console.error(error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteNote = async (noteId: number) => {
+  const handleDelete = async (noteId: number) => {
     try {
       await deleteMutation.mutateAsync({ noteId });
-      toast.success("Note deleted successfully.");
-      dashboardQuery.refetch();
+      toast.success("Note deleted.");
+      refetchAll();
       setDeleteNoteId(null);
-    } catch (error) {
-      toast.error("Failed to delete note. Please try again.");
-      console.error(error);
+    } catch {
+      toast.error("Failed to delete note.");
     }
   };
 
-  const handleEditNote = (noteId: number, currentContent: string) => {
-    setEditingNoteId(noteId);
-    setEditContent(currentContent);
+  const handleArchive = async (noteId: number) => {
+    try {
+      await archiveMutation.mutateAsync({ noteId });
+      toast.success("Note archived.");
+      refetchAll();
+      setArchiveNoteId(null);
+    } catch {
+      toast.error("Failed to archive note.");
+    }
   };
 
   const handleSaveEdit = async () => {
-    if (!editContent.trim()) {
-      toast.error("Note content cannot be empty");
-      return;
-    }
-
-    if (editingNoteId === null) return;
-
+    if (!editContent.trim() || editingNoteId === null) return;
     try {
-      await updateMutation.mutateAsync({
-        noteId: editingNoteId,
-        newContent: editContent,
-      });
-      toast.success("Note updated successfully.");
-      dashboardQuery.refetch();
+      await updateMutation.mutateAsync({ noteId: editingNoteId, newContent: editContent });
+      toast.success("Note updated.");
+      refetchAll();
       setEditingNoteId(null);
       setEditContent("");
-    } catch (error) {
-      toast.error("Failed to update note. Please try again.");
-      console.error(error);
+    } catch {
+      toast.error("Failed to update note.");
     }
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      People: "bg-blue-100 text-blue-800",
-      Projects: "bg-purple-100 text-purple-800",
-      Ideas: "bg-green-100 text-green-800",
-      Admin: "bg-orange-100 text-orange-800",
-    };
-    return colors[category] || "bg-gray-100 text-gray-800";
-  };
-
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.85) return "text-green-600";
-    if (confidence >= 0.6) return "text-yellow-600";
-    return "text-red-600";
-  };
+  const stats = statsQuery.data;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-gray-600">Capture and organize your thoughts</p>
+        <h1 className="text-3xl font-bold mb-1">Dashboard</h1>
+        <p className="text-muted-foreground">Capture and organise your thoughts</p>
       </div>
 
+      {/* Capture form */}
       <Card>
         <CardHeader>
           <CardTitle>Capture a Note</CardTitle>
-          <CardDescription>Enter your thought, task, or idea below</CardDescription>
+          <CardDescription>Enter your thought, task, or idea — AI will classify it instantly</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Textarea
@@ -127,10 +141,7 @@ export default function Dashboard() {
           />
           <Button onClick={handleCapture} disabled={isSubmitting || !noteContent.trim()} className="w-full">
             {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Capturing...
-              </>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Capturing...</>
             ) : (
               "Capture Note"
             )}
@@ -138,118 +149,166 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">Recent Notes</h2>
-          <Select value={selectedCategory || "all"} onValueChange={(value) => setSelectedCategory(value === "all" ? undefined : value)}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Filter by category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="People">People</SelectItem>
-              <SelectItem value="Projects">Projects</SelectItem>
-              <SelectItem value="Ideas">Ideas</SelectItem>
-              <SelectItem value="Admin">Admin</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {dashboardQuery.isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-          </div>
-        ) : dashboardQuery.data && dashboardQuery.data.length > 0 ? (
-          <div className="space-y-3">
-            {dashboardQuery.data.map((note) => (
-              <Card key={note.id}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-600 mb-2">{note.content}</p>
-                      <p className="text-xs text-gray-500">{note.reasoning}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <div className="flex gap-2 items-center">
-                        <Badge className={getCategoryColor(note.category)}>{note.category}</Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditNote(note.id, note.content)}
-                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteNoteId(note.id)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <span className={`text-xs font-semibold ${getConfidenceColor(parseFloat(note.confidence as unknown as string))}`}>
-                        {(parseFloat(note.confidence as unknown as string) * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="pt-6 text-center text-gray-500">
-              No notes yet. Start by capturing your first note above!
-            </CardContent>
-          </Card>
-        )}
+      {/* Stats row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {CATEGORIES.map((cat) => {
+          const { icon: Icon, badge } = CATEGORY_CONFIG[cat];
+          return (
+            <Card
+              key={cat}
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setLocation(`/category/${cat}`)}
+            >
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${badge} bg-opacity-60`}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{cat}</p>
+                  <p className="text-2xl font-bold leading-none">
+                    {statsQuery.isLoading ? "—" : (stats?.[cat] ?? 0)}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
+      {/* Category sections — 2×2 grid */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {CATEGORIES.map((cat) => {
+          const { color, badge, icon: Icon } = CATEGORY_CONFIG[cat];
+          const query = categoryQueries[cat];
+          const notes = (query.data ?? []).slice(0, 3);
+
+          return (
+            <div key={cat} className={`rounded-xl border p-4 space-y-3 ${color}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="font-semibold">{cat}</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground gap-1"
+                  onClick={() => setLocation(`/category/${cat}`)}
+                >
+                  View all <ArrowRight className="h-3 w-3" />
+                </Button>
+              </div>
+
+              {query.isLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : notes.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-3 text-center">No notes yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {notes.map((note) => {
+                    const confidence = parseFloat(note.confidence as unknown as string);
+                    return (
+                      <div key={note.id} className="bg-white/80 rounded-lg p-3 shadow-sm">
+                        <p className="text-sm line-clamp-2 mb-2">{note.content}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Badge className={`text-xs ${badge}`}>{note.category}</Badge>
+                            <span className={`text-xs font-semibold ${getConfidenceColor(confidence)}`}>
+                              {(confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50"
+                              onClick={() => { setEditingNoteId(note.id); setEditContent(note.content); }}
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-amber-600 hover:bg-amber-50"
+                              onClick={() => setArchiveNoteId(note.id)}
+                            >
+                              <Archive className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                              onClick={() => setDeleteNoteId(note.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Delete dialog */}
       <AlertDialog open={deleteNoteId !== null} onOpenChange={(open) => !open && setDeleteNoteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Note</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this note? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-3 justify-end">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteNoteId && handleDeleteNote(deleteNoteId)}
+              onClick={() => deleteNoteId && handleDelete(deleteNoteId)}
               className="bg-red-600 hover:bg-red-700"
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
+              {deleteMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting...</> : "Delete"}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Archive dialog */}
+      <AlertDialog open={archiveNoteId !== null} onOpenChange={(open) => !open && setArchiveNoteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive Note</AlertDialogTitle>
+            <AlertDialogDescription>The note will be hidden from the dashboard but can be restored from the Archive page.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => archiveNoteId && handleArchive(archiveNoteId)}
+              className="bg-amber-600 hover:bg-amber-700"
+              disabled={archiveMutation.isPending}
+            >
+              {archiveMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Archiving...</> : "Archive"}
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit dialog */}
       <AlertDialog open={editingNoteId !== null} onOpenChange={(open) => !open && setEditingNoteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Edit Note</AlertDialogTitle>
-            <AlertDialogDescription>
-              Modify the content of your note below.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Modify the content of your note below.</AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-4">
-            <Textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="min-h-24"
-              placeholder="Edit your note..."
-            />
-          </div>
+          <Textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="min-h-24"
+            placeholder="Edit your note..."
+          />
           <div className="flex gap-3 justify-end">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -257,14 +316,7 @@ export default function Dashboard() {
               className="bg-blue-600 hover:bg-blue-700"
               disabled={updateMutation.isPending || !editContent.trim()}
             >
-              {updateMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save"
-              )}
+              {updateMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Save"}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>

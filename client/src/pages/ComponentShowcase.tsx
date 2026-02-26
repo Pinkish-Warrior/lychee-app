@@ -215,4 +215,6 @@ export default function ComponentsShowcase() {
     // This is a simplified handler to bypass parsing issues.
     // Original complex logic will be reintroduced carefully later.
   };
+
+  return null;
 }

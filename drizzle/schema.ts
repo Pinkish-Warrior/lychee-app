@@ -33,6 +33,7 @@ export const notes = mysqlTable("notes", {
   confidence: decimal("confidence", { precision: 3, scale: 2 }).notNull(),
   reasoning: text("reasoning").notNull(),
   isCorrected: int("isCorrected").default(0).notNull(),
+  isArchived: int("isArchived").default(0).notNull(),
   originalCategory: mysqlEnum("originalCategory", ["People", "Projects", "Ideas", "Admin"]),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

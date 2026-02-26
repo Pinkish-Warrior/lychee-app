@@ -9,6 +9,7 @@ import Dashboard from "@/pages/Dashboard";
 import ReviewQueue from "@/pages/ReviewQueue";
 import CategoryView from "@/pages/CategoryView";
 import ComponentsShowcase from "@/pages/ComponentShowcase";
+import Archive from "@/pages/Archive";
 
 
 function Router() {
@@ -18,6 +19,7 @@ function Router() {
         <Route path={"/"} component={Dashboard} />
         <Route path={"/review"} component={ReviewQueue} />
         <Route path={"/category/:category"} component={CategoryView} />
+        <Route path={"/archive"} component={Archive} />
         <Route path={"/showcase"} component={ComponentsShowcase} />
 
         <Route path={"/404"} component={NotFound} />

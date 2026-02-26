@@ -1,4 +1,4 @@
-import { eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, notes, feedbackLogs } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -108,7 +108,11 @@ export async function getNotesByUserId(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.select().from(notes).where(eq(notes.userId, userId)).orderBy((t) => t.createdAt);
+  return await db
+    .select()
+    .from(notes)
+    .where(and(eq(notes.userId, userId), eq(notes.isArchived, 0)))
+    .orderBy((t) => t.createdAt);
 }
 
 export async function getNotesByUserAndCategory(userId: number, category: string) {
@@ -118,7 +122,7 @@ export async function getNotesByUserAndCategory(userId: number, category: string
   return await db
     .select()
     .from(notes)
-    .where(eq(notes.userId, userId) && eq(notes.category, category as any))
+    .where(and(eq(notes.userId, userId), eq(notes.category, category as any), eq(notes.isArchived, 0)))
     .orderBy((t) => t.createdAt);
 }
 
@@ -129,8 +133,61 @@ export async function getReviewQueueNotes(userId: number, threshold: number) {
   return await db
     .select()
     .from(notes)
-    .where(eq(notes.userId, userId) && lt(notes.confidence, threshold as any))
+    .where(and(eq(notes.userId, userId), lt(notes.confidence, threshold as any), eq(notes.isArchived, 0)))
     .orderBy((t) => t.createdAt);
+}
+
+export async function getArchivedNotes(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(notes)
+    .where(and(eq(notes.userId, userId), eq(notes.isArchived, 1)))
+    .orderBy((t) => t.updatedAt);
+}
+
+export async function archiveNote(noteId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const note = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  if (!note || note.length === 0 || note[0].userId !== userId) {
+    throw new Error("Note not found or unauthorized");
+  }
+
+  return await db.update(notes).set({ isArchived: 1 }).where(eq(notes.id, noteId));
+}
+
+export async function restoreNote(noteId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const note = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  if (!note || note.length === 0 || note[0].userId !== userId) {
+    throw new Error("Note not found or unauthorized");
+  }
+
+  return await db.update(notes).set({ isArchived: 0 }).where(eq(notes.id, noteId));
+}
+
+export async function getCategoryStats(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const categories = ["People", "Projects", "Ideas", "Admin"] as const;
+  const stats: Record<string, number> = {};
+
+  for (const category of categories) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(notes)
+      .where(and(eq(notes.userId, userId), eq(notes.category, category), eq(notes.isArchived, 0)));
+    stats[category] = Number(result[0]?.count ?? 0);
+  }
+
+  return stats;
 }
 
 export async function updateNoteCategory(noteId: number, category: string, isCorrected: boolean, originalCategory?: string) {

@@ -14,6 +14,10 @@ import {
   logFeedback,
   deleteNote,
   updateNoteContent,
+  archiveNote,
+  restoreNote,
+  getArchivedNotes,
+  getCategoryStats,
 } from "./db";
 
 export const appRouter = router({
@@ -152,6 +156,29 @@ export const appRouter = router({
         await updateNoteContent(noteId, userId, newContent);
         return { success: true };
       }),
+
+    archive: protectedProcedure
+      .input(z.object({ noteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await archiveNote(input.noteId, ctx.user.id);
+        return { success: true };
+      }),
+
+    restore: protectedProcedure
+      .input(z.object({ noteId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await restoreNote(input.noteId, ctx.user.id);
+        return { success: true };
+      }),
+
+    getArchived: protectedProcedure.query(async ({ ctx }) => {
+      const archived = await getArchivedNotes(ctx.user.id);
+      return archived.reverse();
+    }),
+
+    getCategoryStats: protectedProcedure.query(async ({ ctx }) => {
+      return await getCategoryStats(ctx.user.id);
+    }),
   }),
 });
 
