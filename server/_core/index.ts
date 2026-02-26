@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import bcrypt from "bcryptjs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -10,6 +11,8 @@ import { serveStatic, setupVite } from "./vite";
 import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import mysql from "mysql2/promise";
+import { ENV } from "./env";
+import * as db from "../db";
 
 async function runMigrations() {
   if (!process.env.DATABASE_URL) {
@@ -46,8 +49,25 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+async function seedAdminUser() {
+  const { adminEmail, adminPassword } = ENV;
+  if (!adminEmail || !adminPassword) return;
+  const existing = await db.getUserByEmail(adminEmail);
+  if (existing?.passwordHash) return;
+  const hash = await bcrypt.hash(adminPassword, 10);
+  await db.upsertUser({
+    openId: adminEmail,
+    name: adminEmail.split("@")[0],
+    email: adminEmail,
+    passwordHash: hash,
+    lastSignedIn: new Date(),
+  });
+  console.log("[Seed] Admin user created:", adminEmail);
+}
+
 async function startServer() {
   await runMigrations();
+  await seedAdminUser();
 
   const app = express();
   const server = createServer(app);
