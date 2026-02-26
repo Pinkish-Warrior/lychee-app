@@ -15,6 +15,13 @@
       "when": 1769179251490,
       "tag": "0001_rainy_obadiah_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1769225400000,
+      "tag": "0002_add_is_archived",
+      "breakpoints": true
     }
   ]
 }

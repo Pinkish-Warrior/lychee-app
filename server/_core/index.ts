@@ -7,6 +7,25 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { drizzle } from "drizzle-orm/mysql2";
+import { migrate } from "drizzle-orm/mysql2/migrator";
+import mysql from "mysql2/promise";
+
+async function runMigrations() {
+  if (!process.env.DATABASE_URL) {
+    console.warn("[Migrations] DATABASE_URL not set, skipping migrations");
+    return;
+  }
+  try {
+    const connection = await mysql.createConnection(process.env.DATABASE_URL);
+    const db = drizzle(connection);
+    await migrate(db, { migrationsFolder: "drizzle" });
+    await connection.end();
+    console.log("[Migrations] Applied successfully");
+  } catch (error) {
+    console.error("[Migrations] Failed:", error);
+  }
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -28,6 +47,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  await runMigrations();
+
   const app = express();
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
