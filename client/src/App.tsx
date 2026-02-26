@@ -18,6 +18,7 @@ function Router() {
         <Route path={"/"} component={Dashboard} />
         <Route path={"/review"} component={ReviewQueue} />
         <Route path={"/category/:category"} component={CategoryView} />
+        <Route path={"/showcase"} component={ComponentsShowcase} />
 
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
