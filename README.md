@@ -2,6 +2,8 @@
 
 Lychee is a smart note-taking application designed to automatically organize your thoughts. Using AI, it classifies your notes into categories like People, Projects, Ideas, and Admin, helping you stay organized effortlessly. Notes with lower classification confidence are added to a review queue for your manual approval.
 
+![Lychee demo](assets/demo.gif)
+
 ## Features
 
 -   **AI-Powered Classification**: Automatically categorizes notes with reasoning and a confidence score.
