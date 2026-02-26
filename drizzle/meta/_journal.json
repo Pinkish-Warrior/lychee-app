@@ -22,6 +22,13 @@
       "when": 1769225400000,
       "tag": "0002_add_is_archived",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1769270400000,
+      "tag": "0003_add_password_hash",
+      "breakpoints": true
     }
   ]
 }
