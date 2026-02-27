@@ -52,8 +52,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function seedAdminUser() {
   const { adminEmail, adminPassword } = ENV;
   if (!adminEmail || !adminPassword) return;
-  const existing = await db.getUserByEmail(adminEmail);
-  if (existing?.passwordHash) return;
   const hash = await bcrypt.hash(adminPassword, 10);
   await db.upsertUser({
     openId: adminEmail,
@@ -62,7 +60,7 @@ async function seedAdminUser() {
     passwordHash: hash,
     lastSignedIn: new Date(),
   });
-  console.log("[Seed] Admin user created:", adminEmail);
+  console.log("[Seed] Admin user upserted:", adminEmail);
 }
 
 async function startServer() {
