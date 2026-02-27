@@ -20,7 +20,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FileCheck, Lightbulb, User, Box, Archive } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FileCheck, Lightbulb, User, Archive, Brain, Sun, Moon } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -33,7 +34,6 @@ const menuItems = [
   { icon: Users, label: "Projects", path: "/category/Projects" },
   { icon: Lightbulb, label: "Ideas", path: "/category/Ideas" },
   { icon: Archive, label: "Archive", path: "/archive" },
-  { icon: Box, label: "Showcase", path: "/showcase" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -110,6 +110,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -172,11 +173,25 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Navigation
-                  </span>
-                </div>
+                <>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Brain className="h-4 w-4 text-primary shrink-0" />
+                    <span className="font-semibold tracking-tight truncate">
+                      Leeche
+                    </span>
+                  </div>
+                  <button
+                    onClick={toggleTheme}
+                    className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                    aria-label="Toggle theme"
+                  >
+                    {theme === "dark" ? (
+                      <Sun className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Moon className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </>
               ) : null}
             </div>
           </SidebarHeader>
