@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { ForceGraph2D } from "react-force-graph";
+import ForceGraph2D from "react-force-graph-2d";
 import { trpc } from "../lib/trpc";
 
 const CATEGORY_COLOURS: Record<string, string> = {
