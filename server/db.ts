@@ -1,6 +1,6 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, notes, feedbackLogs } from "../drizzle/schema";
+import { InsertUser, users, notes, feedbackLogs, noteLinks } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -245,6 +245,49 @@ export async function deleteNote(noteId: number, userId: number) {
   }
 
   return await db.delete(notes).where(eq(notes.id, noteId));
+}
+
+export async function createNoteLink(
+  userId: number,
+  sourceId: number,
+  targetId: number,
+  strength: number,
+  reason?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.insert(noteLinks).values({
+    userId,
+    sourceId,
+    targetId,
+    strength: strength.toString() as any,
+    reason: reason ?? null,
+  });
+}
+
+export async function getNoteLinks(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(noteLinks)
+    .where(eq(noteLinks.userId, userId));
+}
+
+export async function deleteNoteLinks(noteId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .delete(noteLinks)
+    .where(
+      or(
+        eq(noteLinks.sourceId, noteId),
+        eq(noteLinks.targetId, noteId)
+      )
+    );
 }
 
 export async function updateNoteContent(noteId: number, userId: number, newContent: string) {

@@ -7,7 +7,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Trash2, Edit2, Archive, Users, FolderKanban, Lightbulb, ClipboardList, ArrowRight, Info } from "lucide-react";
+import { Loader2, Trash2, Edit2, Archive, Users, FolderKanban, Lightbulb, ClipboardList, ArrowRight, Info, List, Network } from "lucide-react";
+import { GraphView } from "@/components/GraphView";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence, animate, useMotionValue } from "framer-motion";
@@ -271,6 +272,7 @@ function CategorySection({
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+  const [view, setView] = useState<"list" | "graph">("list");
   const [noteContent, setNoteContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteNoteId, setDeleteNoteId] = useState<number | null>(null);
@@ -453,35 +455,61 @@ export default function Dashboard() {
         })}
       </motion.div>
 
+      {/* View toggle */}
+      <div className="flex gap-2">
+        <Button
+          variant={view === "list" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("list")}
+          className="gap-1.5"
+        >
+          <List className="h-4 w-4" />
+          List
+        </Button>
+        <Button
+          variant={view === "graph" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("graph")}
+          className="gap-1.5"
+        >
+          <Network className="h-4 w-4" />
+          Graph
+        </Button>
+      </div>
+
       {/* Category sections — 2×2 grid */}
-      <motion.div
-        className="grid grid-cols-1 gap-6 md:grid-cols-2"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {CATEGORIES.map((cat) => {
-          const { color, badge, icon } = CATEGORY_CONFIG[cat];
-          return (
-            <CategorySection
-              key={cat}
-              cat={cat}
-              color={color}
-              badge={badge}
-              icon={icon}
-              query={categoryQueries[cat]}
-              removedIds={removedIds}
-              onViewAll={() => setLocation(`/category/${cat}`)}
-              onEdit={(id, content) => {
-                setEditingNoteId(id);
-                setEditContent(content);
-              }}
-              onArchive={(id) => setArchiveNoteId(id)}
-              onDelete={(id) => setDeleteNoteId(id)}
-            />
-          );
-        })}
-      </motion.div>
+      {view === "list" ? (
+        <motion.div
+          className="grid grid-cols-1 gap-6 md:grid-cols-2"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {CATEGORIES.map((cat) => {
+            const { color, badge, icon } = CATEGORY_CONFIG[cat];
+            return (
+              <CategorySection
+                key={cat}
+                cat={cat}
+                color={color}
+                badge={badge}
+                icon={icon}
+                query={categoryQueries[cat]}
+                removedIds={removedIds}
+                onViewAll={() => setLocation(`/category/${cat}`)}
+                onEdit={(id, content) => {
+                  setEditingNoteId(id);
+                  setEditContent(content);
+                }}
+                onArchive={(id) => setArchiveNoteId(id)}
+                onDelete={(id) => setDeleteNoteId(id)}
+              />
+            );
+          })}
+        </motion.div>
+      ) : (
+        <GraphView />
+      )}
 
       {/* Delete dialog */}
       <AlertDialog open={deleteNoteId !== null} onOpenChange={(open) => !open && setDeleteNoteId(null)}>
