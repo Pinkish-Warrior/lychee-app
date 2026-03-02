@@ -5,7 +5,7 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { classifyNote } from "./classification";
+import { classifyNote, findRelatedNotes } from "./classification";
 import { CLASSIFICATION_THRESHOLDS, shouldReviewNote } from "./config";
 import {
   createNote,
@@ -22,6 +22,8 @@ import {
   getCategoryStats,
   getUserByEmail,
   upsertUser,
+  createNoteLink,
+  getNoteLinks,
 } from "./db";
 import { sdk } from "./_core/sdk";
 
@@ -92,6 +94,18 @@ export const appRouter = router({
           classification.confidence,
           classification.reasoning
         );
+
+        // Auto-link: find related notes and create graph edges (best-effort)
+        try {
+          const newNoteId = (result[0] as any).insertId as number;
+          const existingNotes = await getNotesByUserId(userId);
+          const related = await findRelatedNotes(content, existingNotes.filter((n) => n.id !== newNoteId));
+          await Promise.all(
+            related.map((r) => createNoteLink(userId, newNoteId, r.noteId, r.strength, r.reason))
+          );
+        } catch (e) {
+          console.warn("[Graph] Auto-linking failed:", e);
+        }
 
         return {
           success: true,
@@ -218,6 +232,47 @@ export const appRouter = router({
     getCategoryStats: protectedProcedure.query(async ({ ctx }) => {
       return await getCategoryStats(ctx.user.id);
     }),
+  }),
+
+  graph: router({
+    getData: protectedProcedure.query(async ({ ctx }) => {
+      const userId = ctx.user.id;
+      const [allNotes, allLinks] = await Promise.all([
+        getNotesByUserId(userId),
+        getNoteLinks(userId),
+      ]);
+
+      const nodes = allNotes.map((note) => ({
+        id: note.id,
+        label: note.content.slice(0, 60) + (note.content.length > 60 ? "…" : ""),
+        category: note.category,
+        confidence: note.confidence,
+        isCorrected: note.isCorrected,
+        createdAt: note.createdAt,
+      }));
+
+      const links = allLinks.map((link) => ({
+        source: link.sourceId,
+        target: link.targetId,
+        strength: link.strength,
+        reason: link.reason,
+      }));
+
+      return { nodes, links };
+    }),
+
+    linkNotes: protectedProcedure
+      .input(
+        z.object({
+          sourceId: z.number(),
+          targetId: z.number(),
+          reason: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await createNoteLink(ctx.user.id, input.sourceId, input.targetId, 1.0, input.reason);
+        return { success: true };
+      }),
   }),
 });
 

@@ -1,5 +1,63 @@
 import { invokeLLM } from "./_core/llm";
 
+export async function findRelatedNotes(
+  newContent: string,
+  existingNotes: { id: number; content: string }[]
+): Promise<{ noteId: number; strength: number; reason: string }[]> {
+  if (existingNotes.length === 0) return [];
+
+  const messages = [
+    {
+      role: "system",
+      content: "You are a knowledge graph assistant. Return only valid JSON.",
+    },
+    {
+      role: "user",
+      content: `A user just captured this note:\n"${newContent}"\n\nHere are their existing notes (id + content):\n${existingNotes.map((n) => `ID ${n.id}: "${n.content.slice(0, 120)}"`).join("\n")}\n\nReturn a JSON array of related notes (max 3) with this shape:\n[{ "noteId": <id>, "strength": <0.1-1.0>, "reason": "<short reason>" }]\nIf nothing is related, return an empty array: []`,
+    },
+  ];
+
+  const response = await invokeLLM({
+    messages,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "related_notes",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            links: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  noteId: { type: "number" },
+                  strength: { type: "number", minimum: 0.1, maximum: 1.0 },
+                  reason: { type: "string" },
+                },
+                required: ["noteId", "strength", "reason"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["links"],
+          additionalProperties: false,
+        },
+      },
+    },
+  } as any);
+
+  const raw = response.choices[0]?.message.content;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    return parsed.links ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export interface ClassificationResult {
   reasoning: string;
   category: "People" | "Projects" | "Ideas" | "Admin";
