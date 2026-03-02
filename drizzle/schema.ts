@@ -55,3 +55,16 @@ export const feedbackLogs = mysqlTable("feedbackLogs", {
 
 export type FeedbackLog = typeof feedbackLogs.$inferSelect;
 export type InsertFeedbackLog = typeof feedbackLogs.$inferInsert;
+
+export const noteLinks = mysqlTable("noteLinks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId:    int("userId").notNull(),
+  sourceId:  int("sourceId").notNull(),
+  targetId:  int("targetId").notNull(),
+  strength:  decimal("strength", { precision: 3, scale: 2 }).notNull().default("0.50"),
+  reason:    text("reason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type NoteLink = typeof noteLinks.$inferSelect;
+export type InsertNoteLink = typeof noteLinks.$inferInsert;
