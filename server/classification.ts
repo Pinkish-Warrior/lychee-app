@@ -1,8 +1,9 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, UserAiConfig } from "./_core/llm";
 
 export async function findRelatedNotes(
   newContent: string,
-  existingNotes: { id: number; content: string }[]
+  existingNotes: { id: number; content: string }[],
+  userConfig?: UserAiConfig
 ): Promise<{ noteId: number; strength: number; reason: string }[]> {
   if (existingNotes.length === 0) return [];
 
@@ -46,7 +47,7 @@ export async function findRelatedNotes(
         },
       },
     },
-  } as any);
+  } as any, userConfig);
 
   const raw = response.choices[0]?.message.content;
   if (!raw) return [];
@@ -80,7 +81,7 @@ Your output MUST be a valid JSON object with three keys: "reasoning", "category"
 
 User Note: "{content}"`;
 
-export async function classifyNote(content: string): Promise<ClassificationResult> {
+export async function classifyNote(content: string, userConfig?: UserAiConfig): Promise<ClassificationResult> {
   const prompt = CLASSIFICATION_PROMPT.replace("{content}", content);
 
   const messages = [
@@ -126,7 +127,7 @@ export async function classifyNote(content: string): Promise<ClassificationResul
         },
       },
     },
-  } as any);
+  } as any, userConfig);
 
   const content_response = response.choices[0]?.message.content;
   if (!content_response) {
