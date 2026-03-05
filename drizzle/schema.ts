@@ -21,6 +21,19 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   passwordHash: varchar("passwordHash", { length: 255 }),
+
+  // Billing
+  subscriptionStatus: mysqlEnum("subscriptionStatus", ["trialing", "active", "past_due", "canceled", "none", "lifetime"]).default("none"),
+  subscriptionPlan:   mysqlEnum("subscriptionPlan", ["standard", "student"]).default("standard"),
+  trialEndsAt:        timestamp("trialEndsAt"),
+  stripeCustomerId:   varchar("stripeCustomerId", { length: 255 }),
+  stripeSubId:        varchar("stripeSubId", { length: 255 }),
+
+  // AI provider (user-supplied keys, encrypted at rest)
+  aiProvider:   mysqlEnum("aiProvider", ["openai", "gemini", "claude"]).default("gemini"),
+  openaiApiKey: varchar("openaiApiKey", { length: 500 }),
+  geminiApiKey: varchar("geminiApiKey", { length: 500 }),
+  claudeApiKey: varchar("claudeApiKey", { length: 500 }),
 });
 
 export type User = typeof users.$inferSelect;
