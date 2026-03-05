@@ -11,6 +11,8 @@ import CategoryView from "@/pages/CategoryView";
 import ComponentsShowcase from "@/pages/ComponentShowcase";
 import Archive from "@/pages/Archive";
 import Login from "@/pages/Login";
+import Billing from "@/pages/Billing";
+import Settings from "@/pages/Settings";
 
 
 function Router() {
@@ -24,6 +26,8 @@ function Router() {
             <Route path={"/review"} component={ReviewQueue} />
             <Route path={"/category/:category"} component={CategoryView} />
             <Route path={"/archive"} component={Archive} />
+            <Route path={"/billing"} component={Billing} />
+            <Route path={"/settings"} component={Settings} />
             <Route path={"/showcase"} component={ComponentsShowcase} />
             <Route path={"/404"} component={NotFound} />
             <Route component={NotFound} />
