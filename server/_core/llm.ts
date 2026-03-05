@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { ENV } from "./env";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -270,8 +271,45 @@ const normalizeResponseFormat = ({
   };
 };
 
-export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  const provider = resolveProvider();
+export type UserAiConfig = { provider: "openai" | "gemini" | "claude"; apiKey: string };
+
+async function invokeClaude(apiKey: string, params: InvokeParams): Promise<InvokeResult> {
+  const client = new Anthropic({ apiKey });
+
+  const systemMsg = params.messages.find(m => m.role === "system");
+  const userMessages = params.messages.filter(m => m.role !== "system");
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    system: systemMsg ? (typeof systemMsg.content === "string" ? systemMsg.content : JSON.stringify(systemMsg.content)) : undefined,
+    messages: userMessages.map(m => ({
+      role: m.role as "user" | "assistant",
+      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    })),
+  });
+
+  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  return {
+    id: response.id,
+    created: Math.floor(Date.now() / 1000),
+    model: response.model,
+    choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: response.stop_reason }],
+    usage: { prompt_tokens: response.usage.input_tokens, completion_tokens: response.usage.output_tokens, total_tokens: response.usage.input_tokens + response.usage.output_tokens },
+  };
+}
+
+export async function invokeLLM(params: InvokeParams, userConfig?: UserAiConfig): Promise<InvokeResult> {
+  if (userConfig?.provider === "claude") {
+    return invokeClaude(userConfig.apiKey, params);
+  }
+
+  const provider = userConfig
+    ? (() => {
+        if (userConfig.provider === "openai") return { url: "https://api.openai.com/v1/chat/completions", key: userConfig.apiKey, model: "gpt-4o-mini" };
+        return { url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", key: userConfig.apiKey, model: "gemini-2.5-flash" };
+      })()
+    : resolveProvider();
 
   const {
     messages,

@@ -281,6 +281,20 @@ export default function Dashboard() {
   const [editContent, setEditContent] = useState("");
   const [removedIds, setRemovedIds] = useState<Set<number>>(new Set());
 
+  const billingQuery = trpc.billing.getStatus.useQuery();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const subStatus = billingQuery.data?.subscriptionStatus;
+  const isAdmin = billingQuery.data?.isAdmin ?? false;
+  const trialEndsAt = billingQuery.data?.trialEndsAt ? new Date(billingQuery.data.trialEndsAt) : null;
+  const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / 86400000)) : 0;
+  const showTrialBanner = !bannerDismissed && subStatus === "trialing" && trialDaysLeft <= 2;
+  const isBlocked = !isAdmin && (subStatus === "canceled" || subStatus === "past_due" || subStatus === "none");
+
+  useEffect(() => {
+    if (isBlocked) setLocation("/billing");
+  }, [isBlocked, setLocation]);
+
   const statsQuery = trpc.notes.getCategoryStats.useQuery();
   const peopleQuery = trpc.notes.getByCategory.useQuery({ category: "People" });
   const projectsQuery = trpc.notes.getByCategory.useQuery({ category: "Projects" });
@@ -389,6 +403,34 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold tracking-tight mb-1">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Capture and organise your thoughts</p>
       </motion.div>
+
+      {/* Trial expiry banner */}
+      {showTrialBanner && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-900/20 px-4 py-3 text-sm"
+        >
+          <span className="text-amber-900 dark:text-amber-200">
+            ⏳ Your free trial ends in <strong>{trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"}</strong> — upgrade to keep access.
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setLocation("/billing")}
+              className="font-medium text-amber-900 dark:text-amber-200 underline underline-offset-2 hover:no-underline"
+            >
+              Upgrade
+            </button>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Capture form */}
       <motion.div

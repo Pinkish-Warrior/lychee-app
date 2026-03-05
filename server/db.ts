@@ -2,6 +2,7 @@ import { and, eq, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, notes, feedbackLogs, noteLinks } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { encrypt, decrypt } from './_core/crypto';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -289,6 +290,91 @@ export async function deleteNoteLinks(noteId: number) {
       )
     );
 }
+
+// ─── Subscription helpers ──────────────────────────────────────────────────
+
+export async function getUserSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select({
+      subscriptionStatus: users.subscriptionStatus,
+      subscriptionPlan: users.subscriptionPlan,
+      trialEndsAt: users.trialEndsAt,
+      stripeCustomerId: users.stripeCustomerId,
+      stripeSubId: users.stripeSubId,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function updateSubscription(
+  userId: number,
+  fields: {
+    subscriptionStatus?: "trialing" | "active" | "past_due" | "canceled" | "none" | "lifetime";
+    subscriptionPlan?: "standard" | "student";
+    trialEndsAt?: Date | null;
+    stripeCustomerId?: string | null;
+    stripeSubId?: string | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.update(users).set(fields as any).where(eq(users.id, userId));
+}
+
+// ─── User AI key helpers ───────────────────────────────────────────────────
+
+export async function saveUserApiKey(
+  userId: number,
+  provider: "openai" | "gemini" | "claude",
+  apiKey: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const encryptedKey = encrypt(apiKey);
+  const field = provider === "openai" ? "openaiApiKey"
+              : provider === "gemini" ? "geminiApiKey"
+              : "claudeApiKey";
+
+  return await db
+    .update(users)
+    .set({ [field]: encryptedKey, aiProvider: provider } as any)
+    .where(eq(users.id, userId));
+}
+
+export async function getUserAiConfig(userId: number): Promise<{ provider: "openai" | "gemini" | "claude"; apiKey: string } | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select({ aiProvider: users.aiProvider, openaiApiKey: users.openaiApiKey, geminiApiKey: users.geminiApiKey, claudeApiKey: users.claudeApiKey })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!result.length) return null;
+  const row = result[0];
+  const provider = row.aiProvider ?? "gemini";
+  const encryptedKey = provider === "openai" ? row.openaiApiKey
+                     : provider === "gemini" ? row.geminiApiKey
+                     : row.claudeApiKey;
+
+  if (!encryptedKey) return null;
+  try {
+    return { provider, apiKey: decrypt(encryptedKey) };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Note content ──────────────────────────────────────────────────────────
 
 export async function updateNoteContent(noteId: number, userId: number, newContent: string) {
   const db = await getDb();
