@@ -27,6 +27,15 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
+export const subscribedProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const { user } = ctx;
+  if (user.role === "admin") return next({ ctx });
+  if (user.subscriptionStatus === "lifetime") return next({ ctx });
+  if (user.subscriptionStatus === "active") return next({ ctx });
+  if (user.subscriptionStatus === "trialing" && user.trialEndsAt && user.trialEndsAt > new Date()) return next({ ctx });
+  throw new TRPCError({ code: "FORBIDDEN", message: "Subscription required" });
+});
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
