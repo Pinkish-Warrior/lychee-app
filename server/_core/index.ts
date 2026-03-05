@@ -10,6 +10,7 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import bcrypt from "bcryptjs";
+import Stripe from "stripe";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -66,7 +67,8 @@ async function seedAdminUser() {
     email: adminEmail,
     passwordHash: hash,
     lastSignedIn: new Date(),
-  });
+    role: "admin",
+  } as any);
   console.log("[Seed] Admin user upserted:", adminEmail);
 }
 
@@ -76,6 +78,67 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+
+  // Stripe webhook — must be registered BEFORE express.json() to receive raw body
+  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    if (!ENV.stripeSecretKey || !ENV.stripeWebhookSecret) {
+      res.sendStatus(400);
+      return;
+    }
+    const stripe = new Stripe(ENV.stripeSecretKey);
+    const sig = req.headers["stripe-signature"] as string;
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, ENV.stripeWebhookSecret);
+    } catch (err) {
+      console.error("[Stripe webhook] Signature verification failed:", err);
+      res.sendStatus(400);
+      return;
+    }
+
+    const getCustomerId = (obj: any): string | null => obj?.customer ?? null;
+    const getMetaUserId = (obj: any): number | null => {
+      const id = obj?.metadata?.userId;
+      return id ? parseInt(id) : null;
+    };
+
+    try {
+      if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
+        const sub = event.data.object as Stripe.Subscription;
+        const userId = getMetaUserId(sub);
+        if (userId) {
+          const plan = (sub.items.data[0]?.price.id === ENV.stripeStudentPriceId) ? "student" : "standard";
+          const status = sub.status === "active" ? "active"
+                       : sub.status === "trialing" ? "trialing"
+                       : sub.status === "past_due" ? "past_due"
+                       : sub.status === "canceled" ? "canceled" : "none";
+          await db.updateSubscription(userId, {
+            subscriptionStatus: status as any,
+            subscriptionPlan: plan,
+            stripeCustomerId: getCustomerId(sub) ?? undefined,
+            stripeSubId: sub.id,
+          });
+        }
+      } else if (event.type === "customer.subscription.deleted") {
+        const sub = event.data.object as Stripe.Subscription;
+        const userId = getMetaUserId(sub);
+        if (userId) await db.updateSubscription(userId, { subscriptionStatus: "canceled" });
+      } else if (event.type === "invoice.payment_failed") {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subId = (invoice as any).subscription as string | null;
+        if (subId) {
+          const sub = await stripe.subscriptions.retrieve(subId);
+          const userId = getMetaUserId(sub);
+          if (userId) await db.updateSubscription(userId, { subscriptionStatus: "past_due" });
+        }
+      }
+    } catch (err) {
+      console.error("[Stripe webhook] Handler error:", err);
+    }
+
+    res.sendStatus(200);
+  });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
