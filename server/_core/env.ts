@@ -13,4 +13,11 @@ export const ENV = {
   // Admin seeding for email/password auth
   adminEmail: process.env.ADMIN_EMAIL ?? "",
   adminPassword: process.env.ADMIN_PASSWORD ?? "",
+  // Stripe billing
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  stripeStandardPriceId: process.env.STRIPE_STANDARD_PRICE_ID ?? "",
+  stripeStudentPriceId: process.env.STRIPE_STUDENT_PRICE_ID ?? "",
+  // Encryption for user-stored API keys
+  apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET ?? "",
 };
