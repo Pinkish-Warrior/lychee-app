@@ -1,10 +1,11 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { publicProcedure, router, protectedProcedure, subscribedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import Stripe from "stripe";
 import { classifyNote, findRelatedNotes } from "./classification";
 import { CLASSIFICATION_THRESHOLDS, shouldReviewNote } from "./config";
 import {
@@ -24,8 +25,26 @@ import {
   upsertUser,
   createNoteLink,
   getNoteLinks,
+  getUserSubscription,
+  updateSubscription,
+  saveUserApiKey,
+  getUserAiConfig,
 } from "./db";
 import { sdk } from "./_core/sdk";
+import { ENV } from "./_core/env";
+
+const STUDENT_EMAIL_DOMAINS = [".ac.uk", ".edu", ".ac.ie", ".ac.za", ".edu.au", ".ac.nz", ".ac.in", ".edu.sg"];
+
+function isStudentEmail(email: string): boolean {
+  if (!email) return false;
+  const lower = email.toLowerCase();
+  return STUDENT_EMAIL_DOMAINS.some(domain => lower.endsWith(domain));
+}
+
+function getStripe() {
+  if (!ENV.stripeSecretKey) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Stripe not configured" });
+  return new Stripe(ENV.stripeSecretKey);
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -65,7 +84,8 @@ export const appRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists" });
         }
         const passwordHash = await bcrypt.hash(input.password, 10);
-        await upsertUser({ openId: input.email, name: input.name, email: input.email, passwordHash, lastSignedIn: new Date() });
+        const trialEndsAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+        await upsertUser({ openId: input.email, name: input.name, email: input.email, passwordHash, lastSignedIn: new Date(), subscriptionStatus: "trialing", trialEndsAt } as any);
         const { ONE_YEAR_MS } = await import("@shared/const");
         const token = await sdk.createSessionToken(input.email, { name: input.name, expiresInMs: ONE_YEAR_MS });
         const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -75,7 +95,7 @@ export const appRouter = router({
   }),
 
   notes: router({
-    capture: protectedProcedure
+    capture: subscribedProcedure
       .input(
         z.object({
           content: z.string().min(1, "Note content cannot be empty"),
@@ -84,8 +104,9 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { content } = input;
         const userId = ctx.user.id;
+        const userConfig = await getUserAiConfig(userId) ?? undefined;
 
-        const classification = await classifyNote(content);
+        const classification = await classifyNote(content, userConfig);
 
         const result = await createNote(
           userId,
@@ -99,7 +120,7 @@ export const appRouter = router({
         try {
           const newNoteId = (result[0] as any).insertId as number;
           const existingNotes = await getNotesByUserId(userId);
-          const related = await findRelatedNotes(content, existingNotes.filter((n) => n.id !== newNoteId));
+          const related = await findRelatedNotes(content, existingNotes.filter((n) => n.id !== newNoteId), userConfig);
           await Promise.all(
             related.map((r) => createNoteLink(userId, newNoteId, r.noteId, r.strength, r.reason))
           );
@@ -114,19 +135,19 @@ export const appRouter = router({
         };
       }),
 
-    getDashboard: protectedProcedure.query(async ({ ctx }) => {
+    getDashboard: subscribedProcedure.query(async ({ ctx }) => {
       const userId = ctx.user.id;
       const allNotes = await getNotesByUserId(userId);
       return allNotes.slice(-10).reverse();
     }),
 
-    getReviewQueue: protectedProcedure.query(async ({ ctx }) => {
+    getReviewQueue: subscribedProcedure.query(async ({ ctx }) => {
       const userId = ctx.user.id;
       const reviewNotes = await getReviewQueueNotes(userId, CLASSIFICATION_THRESHOLDS.HIGH);
       return reviewNotes.reverse();
     }),
 
-    getByCategory: protectedProcedure
+    getByCategory: subscribedProcedure
       .input(
         z.object({
           category: z.enum(["People", "Projects", "Ideas", "Admin"]),
@@ -138,7 +159,7 @@ export const appRouter = router({
         return notes.reverse();
       }),
 
-    delete: protectedProcedure
+    delete: subscribedProcedure
       .input(
         z.object({
           noteId: z.number(),
@@ -152,7 +173,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    getDashboardFiltered: protectedProcedure
+    getDashboardFiltered: subscribedProcedure
       .input(
         z.object({
           category: z.enum(["People", "Projects", "Ideas", "Admin"]).optional(),
@@ -169,7 +190,7 @@ export const appRouter = router({
         return allNotes.slice(-10).reverse();
       }),
 
-    correctClassification: protectedProcedure
+    correctClassification: subscribedProcedure
       .input(
         z.object({
           noteId: z.number(),
@@ -195,7 +216,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    updateContent: protectedProcedure
+    updateContent: subscribedProcedure
       .input(
         z.object({
           noteId: z.number(),
@@ -210,32 +231,32 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    archive: protectedProcedure
+    archive: subscribedProcedure
       .input(z.object({ noteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await archiveNote(input.noteId, ctx.user.id);
         return { success: true };
       }),
 
-    restore: protectedProcedure
+    restore: subscribedProcedure
       .input(z.object({ noteId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await restoreNote(input.noteId, ctx.user.id);
         return { success: true };
       }),
 
-    getArchived: protectedProcedure.query(async ({ ctx }) => {
+    getArchived: subscribedProcedure.query(async ({ ctx }) => {
       const archived = await getArchivedNotes(ctx.user.id);
       return archived.reverse();
     }),
 
-    getCategoryStats: protectedProcedure.query(async ({ ctx }) => {
+    getCategoryStats: subscribedProcedure.query(async ({ ctx }) => {
       return await getCategoryStats(ctx.user.id);
     }),
   }),
 
   graph: router({
-    getData: protectedProcedure.query(async ({ ctx }) => {
+    getData: subscribedProcedure.query(async ({ ctx }) => {
       const userId = ctx.user.id;
       const [allNotes, allLinks] = await Promise.all([
         getNotesByUserId(userId),
@@ -261,7 +282,7 @@ export const appRouter = router({
       return { nodes, links };
     }),
 
-    linkNotes: protectedProcedure
+    linkNotes: subscribedProcedure
       .input(
         z.object({
           sourceId: z.number(),
@@ -271,6 +292,80 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         await createNoteLink(ctx.user.id, input.sourceId, input.targetId, 1.0, input.reason);
+        return { success: true };
+      }),
+  }),
+  billing: router({
+    getStatus: protectedProcedure.query(async ({ ctx }) => {
+      const sub = await getUserSubscription(ctx.user.id);
+      const isStudent = isStudentEmail(ctx.user.email ?? "");
+      const isAdmin = ctx.user.role === "admin";
+      return { ...sub, isStudent, isAdmin };
+    }),
+
+    createCheckout: protectedProcedure.mutation(async ({ ctx }) => {
+      const stripe = getStripe();
+      const user = ctx.user;
+      const isStudent = isStudentEmail(user.email ?? "");
+      const priceId = isStudent ? ENV.stripeStudentPriceId : ENV.stripeStandardPriceId;
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer_email: user.email ?? undefined,
+        line_items: [{ price: priceId, quantity: 1 }],
+        subscription_data: { trial_period_days: 15, metadata: { userId: String(user.id) } },
+        metadata: { userId: String(user.id) },
+        success_url: `${ENV.isProduction ? "https://your-domain.com" : "http://localhost:5173"}/billing?success=1`,
+        cancel_url: `${ENV.isProduction ? "https://your-domain.com" : "http://localhost:5173"}/billing?canceled=1`,
+      });
+
+      return { url: session.url };
+    }),
+
+    createPortal: protectedProcedure.mutation(async ({ ctx }) => {
+      const stripe = getStripe();
+      const sub = await getUserSubscription(ctx.user.id);
+      if (!sub?.stripeCustomerId) throw new TRPCError({ code: "BAD_REQUEST", message: "No Stripe customer found" });
+
+      const session = await stripe.billingPortal.sessions.create({
+        customer: sub.stripeCustomerId,
+        return_url: `${ENV.isProduction ? "https://your-domain.com" : "http://localhost:5173"}/billing`,
+      });
+
+      return { url: session.url };
+    }),
+
+    grantLifetime: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        await updateSubscription(input.userId, { subscriptionStatus: "lifetime" });
+        return { success: true };
+      }),
+  }),
+
+  settings: router({
+    getApiKeyStatus: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import("./db");
+      const { users } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const result = await db.select({ aiProvider: users.aiProvider, openaiApiKey: users.openaiApiKey, geminiApiKey: users.geminiApiKey, claudeApiKey: users.claudeApiKey }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      if (!result.length) return { provider: "gemini", hasKey: false };
+      const row = result[0];
+      const provider = row.aiProvider ?? "gemini";
+      const hasKey = !!(provider === "openai" ? row.openaiApiKey : provider === "gemini" ? row.geminiApiKey : row.claudeApiKey);
+      return { provider, hasKey };
+    }),
+
+    saveApiKey: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["openai", "gemini", "claude"]),
+        apiKey: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await saveUserApiKey(ctx.user.id, input.provider, input.apiKey);
         return { success: true };
       }),
   }),
